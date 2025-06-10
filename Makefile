@@ -89,7 +89,7 @@ linux-libs:
 
 macos-libs:
 	mkdir -p $(DESKTOP_OUT)/ &&\
-	curl -L $(CORE_URL)/$(CORE_NAME)-macos-universal.dylib -o $(DESTOP_OUT)/libcore.dylib
+	curl -L $(CORE_URL)/$(CORE_NAME)-macos-universal.dylib -o $(DESKTOP_OUT)/libcore.dylib
 
 ios-libs: #not tested
 	mkdir -p $(DESKTOP_OUT)/ &&\
