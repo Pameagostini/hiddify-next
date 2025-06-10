@@ -47,19 +47,27 @@ sync_translate:
 android-release: android-apk-release
 
 android-apk-release:
+	cd android && ./gradlew clean
+	flutter clean
 	flutter build apk --target-platform android-arm,android-arm64,android-x64 --split-per-abi --target $(TARGET) $(BUILD_ARGS)
 	ls -R build/app/outputs
 
 android-aab-release:
+	cd android && ./gradlew clean
+	flutter clean
 	flutter build appbundle --target $(TARGET) $(BUILD_ARGS) --dart-define release=google-play
 	ls -R build/app/outputs
 
 android-libs:
 	mkdir -p $(ANDROID_OUT)
 	rm -f $(ANDROID_OUT)/libcore.aar
-	curl -L $(CORE_URL)/$(CORE_NAME)-android.aar -o $(ANDROID_OUT)/libcore.aar
+	echo "Downloading from: $(CORE_URL)/$(CORE_NAME)-android.aar"
+	curl -L -v $(CORE_URL)/$(CORE_NAME)-android.aar -o $(ANDROID_OUT)/libcore.aar
+	echo "Verifying downloaded file:"
 	file $(ANDROID_OUT)/libcore.aar
 	ls -l $(ANDROID_OUT)/libcore.aar
+	unzip -t $(ANDROID_OUT)/libcore.aar || echo "Warning: AAR file might be invalid"
+	cd android && ./gradlew clean
 
 android-apk-libs: android-libs
 android-aab-libs: android-libs
