@@ -96,10 +96,14 @@ jobs:
           else
             echo "Error: dependencies.properties does NOT exist!"
           fi
+          echo "Content of Makefile:" # Nuevo: Imprime el contenido del Makefile
+          cat Makefile
 
       - name: Get Libs ${{ matrix.platform }}
         run: |
-           make android-libs
+          set -euxo pipefail
+          echo "Attempting to run make -f Makefile android-libs"
+          make -f Makefile android-libs # Cambio: Usar -f Makefile explícitamente
 
       - name: Setup Android Signing Properties
         if: startsWith(matrix.platform,'android')
