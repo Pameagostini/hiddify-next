@@ -56,7 +56,10 @@ android-aab-release:
 
 android-libs:
 	mkdir -p $(ANDROID_OUT)
+	rm -f $(ANDROID_OUT)/libcore.aar
 	curl -L $(CORE_URL)/$(CORE_NAME)-android.aar -o $(ANDROID_OUT)/libcore.aar
+	file $(ANDROID_OUT)/libcore.aar
+	ls -l $(ANDROID_OUT)/libcore.aar
 
 android-apk-libs: android-libs
 android-aab-libs: android-libs
