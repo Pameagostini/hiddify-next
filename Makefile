@@ -9,7 +9,7 @@ CORE_NAME=hiddify-$(CORE_PRODUCT_NAME)
 ifeq ($(CHANNEL),prod)
 CORE_URL=https://github.com/hiddify/hiddify-next-core/releases/download/v$(core.version)
 else
-CORE_URL=https://github.com/hiddify/hiddify-next-core/releases/download/latest
+CORE_URL=https://github.com/hiddify/hiddify-next-core/releases/download/draft
 endif
 
 ifeq ($(CHANNEL),prod)
@@ -46,34 +46,24 @@ sync_translate:
 
 android-release: android-apk-release
 
-android-apk-release:
-	cd android && ./gradlew clean
-	flutter clean
+android-apk-release: build-android-libs # DEPENDS ON BUILDING THE AAR
+	cd android && ./gradlew clean # Clean Android Gradle project
+	flutter clean # Clean Flutter project
 	flutter build apk --target-platform android-arm,android-arm64,android-x64 --split-per-abi --target $(TARGET) $(BUILD_ARGS)
 	ls -R build/app/outputs
 
-android-aab-release:
-	cd android && ./gradlew clean
-	flutter clean
+android-aab-release: build-android-libs # DEPENDS ON BUILDING THE AAR
+	cd android && ./gradlew clean # Clean Android Gradle project
+	flutter clean # Clean Flutter project
 	flutter build appbundle --target $(TARGET) $(BUILD_ARGS) --dart-define release=google-play
 	ls -R build/app/outputs
 
-android-libs:
-	mkdir -p $(ANDROID_OUT)
-	rm -f $(ANDROID_OUT)/libcore.aar
-	echo "Downloading from: $(CORE_URL)/$(CORE_NAME)-android.aar"
-	curl -L -v $(CORE_URL)/$(CORE_NAME)-android.aar -o $(ANDROID_OUT)/libcore.aar
-	echo "Verifying downloaded file:"
-	file $(ANDROID_OUT)/libcore.aar
-	ls -l $(ANDROID_OUT)/libcore.aar
-	unzip -t $(ANDROID_OUT)/libcore.aar || echo "Warning: AAR file might be invalid"
-	cd android && ./gradlew clean
-
-android-apk-libs: android-libs
-android-aab-libs: android-libs
+# Esta regla construye el AAR de Android desde el submódulo libcore
+build-android-libs:
+	cd libcore && make -f mobile/Makefile android && mv ./bin/hiddify-libcore-android.aar ../android/app/libs/libcore.aar
 
 get-geo-assets:
 	curl -L https://github.com/SagerNet/sing-geoip/releases/latest/download/geoip.db -o $(GEO_ASSETS_DIR)/geoip.db
 	curl -L https://github.com/SagerNet/sing-geosite/releases/latest/download/geosite.db -o $(GEO_ASSETS_DIR)/geosite.db
 
-.PHONY: get gen translate prepare sync_translate android-release android-apk-release android-aab-release android-libs android-apk-libs android-aab-libs get-geo-assets
+.PHONY: get gen translate prepare sync_translate android-release android-apk-release android-aab-release build-android-libs get-geo-assets
