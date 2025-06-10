@@ -84,12 +84,8 @@ jobs:
 
       - name: Get Libs ${{ matrix.platform }}
         run: |
-           # Condicionalmente llamar a la regla de construcción de librerías para Android
-           if [[ "${{ matrix.platform }}" == "android-apk" || "${{ matrix.platform }}" == "android-aab" ]]; then
-             make build-android-libs
-           else
-             make ${{ matrix.platform }}-libs
-           fi
+           # Para Android, llamar directamente a la regla 'android-libs' en el Makefile
+           make android-libs
 
       - name: Setup Android Signing Properties
         if: startsWith(matrix.platform,'android')
