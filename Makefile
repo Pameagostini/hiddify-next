@@ -47,13 +47,11 @@ sync_translate:
 android-release: android-apk-release
 
 android-apk-release: build-android-libs # DEPENDS ON BUILDING THE AAR
-	cd android && ./gradlew clean # Clean Android Gradle project
 	flutter clean # Clean Flutter project
 	flutter build apk --target-platform android-arm,android-arm64,android-x64 --split-per-abi --target $(TARGET) $(BUILD_ARGS)
 	ls -R build/app/outputs
 
 android-aab-release: build-android-libs # DEPENDS ON BUILDING THE AAR
-	cd android && ./gradlew clean # Clean Android Gradle project
 	flutter clean # Clean Flutter project
 	flutter build appbundle --target $(TARGET) $(BUILD_ARGS) --dart-define release=google-play
 	ls -R build/app/outputs
