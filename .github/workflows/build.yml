@@ -83,14 +83,23 @@ jobs:
           make translate
           make gen
 
+      - name: Debug Before Get Libs
+        run: |
+          echo "Current working directory:"
+          pwd
+          echo "Files in current directory:"
+          ls -l
+          echo "Checking dependencies.properties:"
+          if [ -f "dependencies.properties" ]; then
+            echo "dependencies.properties exists. Content:"
+            cat dependencies.properties
+          else
+            echo "Error: dependencies.properties does NOT exist!"
+          fi
+
       - name: Get Libs ${{ matrix.platform }}
         run: |
-          set -euxo pipefail # Habilitar modo de depuración
-          echo "Current working directory before make android-libs:"
-          pwd
-          echo "Files in current directory before make android-libs:"
-          ls -l
-          make android-libs # Esto es lo que está fallando
+           make android-libs
 
       - name: Setup Android Signing Properties
         if: startsWith(matrix.platform,'android')
