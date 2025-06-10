@@ -76,18 +76,16 @@ jobs:
           cache: true
           cache-dependency-path: 'libcore/go.sum'
 
-      - name: Generate
+      - name: Prepare Build Environment
         run: |
+          make get
+          make get-geo-assets
           make translate
           make gen
 
-      - name: Get Geo Assets
-        run: |
-          make get-geo-assets
-
       - name: Get Libs ${{ matrix.platform }}
         run: |
-           make build-android-libs
+           make android-libs
 
       - name: Setup Android Signing Properties
         if: startsWith(matrix.platform,'android')
