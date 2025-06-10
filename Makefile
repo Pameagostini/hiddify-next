@@ -102,22 +102,22 @@ get-geo-assets:
 	curl -L https://github.com/SagerNet/sing-geosite/releases/latest/download/geosite.db -o $(GEO_ASSETS_DIR)/geosite.db
 
 build-headers:
-	make -C libcore -f Makefile headers && mv $(BINDIR)/$(CORE_NAME)-headers.h $(BINDIR)/libcore.h
+	make -C libcore/mobile -f Makefile headers && mv $(BINDIR)/$(CORE_NAME)-headers.h $(BINDIR)/libcore.h
 
 build-android-libs:
-	make -C libcore -f Makefile android && mv $(BINDIR)/$(CORE_NAME)-android.aar $(ANDROID_OUT)/libcore.aar
+	make -C libcore/mobile -f Makefile android && mv $(BINDIR)/$(CORE_NAME)-android.aar $(ANDROID_OUT)/libcore.aar
 
 build-windows-libs:
-	make -C libcore -f Makefile windows-amd64 && mv $(BINDIR)/$(CORE_NAME)-windows-amd64.dll $(DESKTOP_OUT)/libcore.dll
+	make -C libcore/mobile -f Makefile windows-amd64 && mv $(BINDIR)/$(CORE_NAME)-windows-amd64.dll $(DESKTOP_OUT)/libcore.dll
 
 build-linux-libs:
-	make -C libcore -f Makefile linux-amd64 && mv $(BINDIR)/$(CORE_NAME)-linux-amd64.so $(DESKTOP_OUT)/libcore.so
+	make -C libcore/mobile -f Makefile linux-amd64 && mv $(BINDIR)/$(CORE_NAME)-linux-amd64.so $(DESKTOP_OUT)/libcore.so
 
 build-macos-libs:
-	make -C libcore -f Makefile macos-universal && mv $(BINDIR)/$(CORE_NAME)-macos-universal.dylib $(DESKTOP_OUT)/libcore.dylib
+	make -C libcore/mobile -f Makefile macos-universal && mv $(BINDIR)/$(CORE_NAME)-macos-universal.dylib $(DESKTOP_OUT)/libcore.dylib
 
 build-ios-libs: 
-	make -C libcore -f Makefile ios  && mv $(BINDIR)/$(CORE_NAME)-ios.xcframework $(IOS_OUT)/libcore.xcframework
+	make -C libcore/mobile -f Makefile ios  && mv $(BINDIR)/$(CORE_NAME)-ios.xcframework $(IOS_OUT)/libcore.xcframework
 
 release: # Create a new tag for release.
 	@echo "previous version was $$(git describe --tags $$(git rev-list --tags --max-count=1))"
