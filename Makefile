@@ -9,7 +9,7 @@ CORE_NAME=hiddify-$(CORE_PRODUCT_NAME)
 ifeq ($(CHANNEL),prod)
 CORE_URL=https://github.com/hiddify/hiddify-next-core/releases/download/v$(core.version)
 else
-CORE_URL=https://github.com/hiddify/hiddify-next-core/releases/download/draft
+CORE_URL=https://github.com/hiddify/hiddify-next-core/releases/download/latest
 endif
 
 ifeq ($(CHANNEL),prod)
