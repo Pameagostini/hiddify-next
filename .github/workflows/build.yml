@@ -136,7 +136,7 @@ jobs:
              make build-android-libs
            else
              make ${{ matrix.platform }}-libs
-          fi
+           fi
 
       - name: Setup Android Signing Properties
         if: startsWith(matrix.platform,'android')
