@@ -3,6 +3,8 @@ on:
   push:
     branches:
       - main
+      - dev # Asegúrate de que 'dev' esté también
+      - fix/compile-errors # ¡Añadimos nuestra rama para que el push la active!
     tags:
       - 'v*'
     paths-ignore:
@@ -11,16 +13,18 @@ on:
       - '.github/**'
       - '!.github/workflows/build.yml'
       - 'appcast.xml'
-  # pull_request:
-  #   branches:
-  #     - main
-concurrency:
-  group: ${{ github.ref }}-${{ github.workflow }}
-  cancel-in-progress: true
+  pull_request: # ¡Descomentamos esta sección y la configuramos!
+    branches:
+      - main
+      - dev # Asegúrate de que 'dev' esté también
+      - fix/compile-errors # ¡Añadimos nuestra rama aquí para que el PR la active!
 
-env:
+env: # ¡Este bloque 'env' debe ir aquí, justo después de 'on:'!
   CHANNEL: ${{ github.ref_type == 'tag' && endsWith(github.ref_name, 'dev') && 'dev' || github.ref_type != 'tag' && 'dev' || 'prod' }}
   NDK_VERSION: r26b
+concurrency: # Y 'concurrency' va justo después de 'env'
+  group: ${{ github.ref }}-${{ github.workflow }}
+  cancel-in-progress: true
 
 jobs:
   build:
