@@ -74,7 +74,7 @@ ios-release: #not tested
 
 android-libs:
 	mkdir -p $(ANDROID_OUT)
-	curl -L $(CORE_URL)/$(CORE_NAME)-android.aar.gz | gunzip > $(ANDROID_OUT)/libcore.aar
+	curl -L $(CORE_URL)/$(CORE_NAME)-android.aar -o $(ANDROID_OUT)/libcore.aar
 
 android-apk-libs: android-libs
 android-aab-libs: android-libs
@@ -89,7 +89,7 @@ linux-libs:
 
 macos-libs:
 	mkdir -p $(DESKTOP_OUT)/ &&\
-	curl -L $(CORE_URL)/$(CORE_NAME)-macos-universal.dylib.gz | gunzip > $(DESKTOP_OUT)/libcore.dylib
+	curl -L $(CORE_URL)/$(CORE_NAME)-macos-universal.dylib -o $(DESKTOP_OUT)/libcore.dylib
 
 ios-libs: #not tested
 	mkdir -p $(DESKTOP_OUT)/ &&\
