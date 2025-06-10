@@ -85,11 +85,11 @@ windows-libs:
 
 linux-libs:
 	mkdir -p $(DESKTOP_OUT)
-	curl -L $(CORE_URL)/$(CORE_NAME)-linux-amd64.so.gz | gunzip > $(DESKTOP_OUT)/libcore.so
+	curl -L $(CORE_URL)/$(CORE_NAME)-linux-amd64.so -o $(DESKTOP_OUT)/libcore.so
 
 macos-libs:
 	mkdir -p $(DESKTOP_OUT)/ &&\
-	curl -L $(CORE_URL)/$(CORE_NAME)-macos-universal.dylib -o $(DESKTOP_OUT)/libcore.dylib
+	curl -L $(CORE_URL)/$(CORE_NAME)-macos-universal.dylib -o $(DESTOP_OUT)/libcore.dylib
 
 ios-libs: #not tested
 	mkdir -p $(DESKTOP_OUT)/ &&\
