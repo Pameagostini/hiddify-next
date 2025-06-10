@@ -135,7 +135,7 @@ jobs:
            if [[ "${{ matrix.platform }}" == "android-apk" || "${{ matrix.platform }}" == "android-aab" ]]; then
              make build-android-libs
            else
-          make ${{ matrix.platform }}-libs
+             make ${{ matrix.platform }}-libs
           fi
 
       - name: Setup Android Signing Properties
