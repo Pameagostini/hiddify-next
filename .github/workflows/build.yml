@@ -83,16 +83,14 @@ jobs:
           make translate
           make gen
 
-      - name: Debug Before Get Libs
-        run: |
-          echo "Current working directory:"
-          pwd
-          echo "Files in current directory:"
-          ls -l
-
       - name: Get Libs ${{ matrix.platform }}
         run: |
-           make android-libs
+          set -euxo pipefail # Habilitar modo de depuración
+          echo "Current working directory before make android-libs:"
+          pwd
+          echo "Files in current directory before make android-libs:"
+          ls -l
+          make android-libs # Esto es lo que está fallando
 
       - name: Setup Android Signing Properties
         if: startsWith(matrix.platform,'android')
