@@ -81,7 +81,7 @@ android-aab-libs: android-libs
 
 windows-libs:
 	mkdir -p $(DESKTOP_OUT)
-	curl -L $(CORE_URL)/$(CORE_NAME)-windows-amd64.dll.gz | gunzip > $(DESKTOP_OUT)/libcore.dll
+	curl -L $(CORE_URL)/$(CORE_NAME)-windows-amd64.dll.gz > $(DESKTOP_OUT)/libcore.dll
 
 linux-libs:
 	mkdir -p $(DESKTOP_OUT)
