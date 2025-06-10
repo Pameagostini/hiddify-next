@@ -81,6 +81,10 @@ jobs:
           make translate
           make gen
 
+      - name: Get Geo Assets
+        run: |
+          make get-geo-assets
+
       - name: Get Libs ${{ matrix.platform }}
         run: |
            make build-android-libs
