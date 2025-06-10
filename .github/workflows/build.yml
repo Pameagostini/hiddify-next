@@ -83,6 +83,13 @@ jobs:
           make translate
           make gen
 
+      - name: Debug Before Get Libs
+        run: |
+          echo "Current working directory:"
+          pwd
+          echo "Files in current directory:"
+          ls -l
+
       - name: Get Libs ${{ matrix.platform }}
         run: |
            make android-libs
