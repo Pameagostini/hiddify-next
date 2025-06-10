@@ -1,202 +1,428 @@
-include dependencies.properties
+name: Build
+on:
+  push:
+    branches:
+      - main
+      - dev # Asegúrate de que 'dev' esté también
+      - fix/compile-errors # ¡Añadimos nuestra rama para que el push la active!
+    tags:
+      - 'v*'
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/**'
+      - '!.github/workflows/build.yml'
+      - 'appcast.xml'
+  pull_request: # ¡Descomentamos esta sección y la configuramos!
+    branches:
+      - main
+      - dev # Asegúrate de que 'dev' esté también
+      - fix/compile-errors # ¡Añadimos nuestra rama aquí para que el PR la active!
 
-BINDIR=./libcore/bin
-ANDROID_OUT=./android/app/libs
-IOS_OUT=./libcore/bin
-DESKTOP_OUT=./libcore/bin
-GEO_ASSETS_DIR=./assets/core
+env: # ¡Este bloque 'env' debe ir aquí, justo después de 'on:'!
+  CHANNEL: ${{ github.ref_type == 'tag' && endsWith(github.ref_name, 'dev') && 'dev' || github.ref_type != 'tag' && 'dev' || 'prod' }}
+  NDK_VERSION: r26b
+concurrency: # Y 'concurrency' va justo después de 'env'
+  group: ${{ github.ref }}-${{ github.workflow }}
+  cancel-in-progress: true
 
-CORE_PRODUCT_NAME=libcore
-CORE_NAME=hiddify-$(CORE_PRODUCT_NAME)
-ifeq ($(CHANNEL),prod)
-CORE_URL=https://github.com/hiddify/hiddify-next-core/releases/download/v$(core.version)
-else
-CORE_URL=https://github.com/hiddify/hiddify-next-core/releases/download/draft
-endif
+jobs:
+  build:
+    permissions: write-all
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: android-apk
+            os: ubuntu-latest
+            targets: apk
 
-ifeq ($(CHANNEL),prod)
-TARGET=lib/main_prod.dart
-else
-TARGET=lib/main.dart
-endif
+          - platform: android-aab
+            os: ubuntu-latest
+            targets: aab
 
-BUILD_ARGS=--dart-define sentry_dsn=$(SENTRY_DSN)
-DISTRIBUTOR_ARGS=--skip-clean --build-target $(TARGET) --build-dart-define sentry_dsn=$(SENTRY_DSN)
+          - platform: windows
+            os: windows-latest
+            aarch: amd64
+            targets: exe
+            filename: hiddify-windows-x64
 
-get:
-	flutter pub get
+          - platform: linux
+            os: ubuntu-latest
+            aarch: amd64
+            targets: AppImage
+            filename: hiddify-linux-x64
 
-gen:
-	dart run build_runner build --delete-conflicting-outputs
+          - platform: macos
+            os: macos-13
+            aarch: universal
+            targets: dmg
+            filename: hiddify-macos-universal
 
-translate:
-	dart run slang
+          # - platform: ios
+          #   os: macos-13
+          #   aarch: universal
+          #   filename: hiddify-ios
+          #   targets: ipa
 
-prepare: get-geo-assets get gen translate
-	@echo "Available platforms:"
-	@echo "android"
-	@echo "windows"
-	@echo "linux"
-	@echo "macos"
-	@echo "ios"
-	if [ -z "$$platform" ]; then \
-		read -p "run make prepare platform=ios or Enter platform name: " choice; \
-	else \
-		choice=$$platform; \
-	fi; \
-	make $$choice-libs
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+      - name: Install macos dmg needed tools
+        if: matrix.platform == 'macos' || matrix.platform == 'ios'
+        run: |
+          # xcode-select --install || softwareupdate --all --install --force
+          # brew uninstall --force $(brew list | grep python@) && brew cleanup || echo "python not installed"
+          brew uninstall --ignore-dependencies python@3.12
+          brew reinstall python@3.10
+          python3 -m pip install --upgrade setuptools pip
+          brew install create-dmg tree
+          npm install -g appdmg
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.16.x'
+          channel: 'stable'
+          cache: true
 
-sync_translate:
-	cd .github && bash sync_translate.sh
-	make translate
+      - name: Setup Java
+        if: startsWith(matrix.platform,'android')
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: 11
 
-android-release: android-apk-release
+      - name: Setup NDK
+        if: startsWith(matrix.platform,'android')
+        uses: nttld/setup-ndk@v1.4.1
+        id: setup-ndk
+        with:
+          ndk-version: ${{ env.NDK_VERSION }}
+          add-to-path: true
+          link-to-sdk: true
 
-android-apk-release:
-	flutter build apk --target-platform android-arm,android-arm64,android-x64 --split-per-abi --target $(TARGET) $(BUILD_ARGS)
-	ls -R build/app/outputs
+      - name: Setup Flutter Distributor
+        if: ${{ !startsWith(matrix.platform,'android') }}
+        run: |
+          dart pub global activate flutter_distributor
 
-android-aab-release:
-	flutter build appbundle --target $(TARGET) $(BUILD_ARGS) --dart-define release=google-play
-	ls -R build/app/outputs
+      - name: Setup Linux dependencies # <-- MODIFICADO: Añadido 'apt update' y corregida la lista de paquetes
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt update
+          sudo apt install -y locate ninja-build pkg-config libgtk-3-dev libglib2.0-dev libayatana-appindicator3-dev fuse rpm patchelf file appstream
+          sudo modprobe fuse
+          wget -O appimagetool "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x appimagetool
+          mv appimagetool /usr/local/bin/
 
-windows-release:
-	flutter_distributor package --platform windows --targets exe $(DISTRIBUTOR_ARGS)
+      - name: Get Geo Assets
+        run: |
+          make get-geo-assets
 
-linux-release:
-	flutter_distributor package --platform linux --targets appimage $(DISTRIBUTOR_ARGS)
+      - name: Get Dependencies
+        run: |
+          make get
 
-macos-release:
-	flutter_distributor package --platform macos --targets dmg $(DISTRIBUTOR_ARGS)
+      - name: Generate
+        run: |
+          make translate
+          make gen
 
-ios-release: #not tested
-	flutter_distributor package --platform ios --targets ipa --build-export-options-plist  ios/exportOptions.plist $(DISTRIBUTOR_ARGS)
+      - name: Get Libs ${{ matrix.platform }} # <-- MODIFICADO: Añadido 'shell: bash' y lógica condicional
+        shell: bash
+        run: |
+           # Condicionalmente llamar a la regla de construcción de librerías para Android
+           if [[ "${{ matrix.platform }}" == "android-apk" || "${{ matrix.platform }}" == "android-aab" ]]; then
+             make build-android-libs
+           else
+             make ${{ matrix.platform }}-libs
+           fi
 
-android-libs:
-	mkdir -p $(ANDROID_OUT)
-	curl -L $(CORE_URL)/$(CORE_NAME)-android.aar -o $(ANDROID_OUT)/libcore.aar
+      - name: Setup Android Signing Properties
+        if: startsWith(matrix.platform,'android')
+        run: |
+          echo "${{ secrets.ANDROID_SIGNING_KEY }}" | base64 --decode > android/key.jks
+          echo "storeFile=$(pwd)/android/key.jks" > android/key.properties
+          echo "storePassword=${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}" >> android/key.properties
+          echo "keyPassword=${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}" >> android/key.properties
+          echo "keyAlias=${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}" >> android/key.properties
 
-android-apk-libs: android-libs
-android-aab-libs: android-libs
+      - name: Setup Apple certificate and provisioning profile
+        if: startsWith(matrix.os,'macos')
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.APPLE_BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_P12_PASSWORD }}
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.APPLE_BUILD_PROVISION_PROFILE_BASE64 }}
+          BUILD_PACKET_TUNNEL_PROVISION_PROFILE_BASE64: ${{ secrets.APPLE_BUILD_PACKET_TUNNEL_PROVISION_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+        run: |
+          # create variables
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          PP_PATH=$RUNNER_TEMP/build_pp.mobileprovision
+          PP_PACKET_TUNNEL_PATH=$RUNNER_TEMP/build_pppt.mobileprovision
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
 
-windows-libs:
-	mkdir -p $(DESKTOP_OUT)
-	curl -L $(CORE_URL)/$(CORE_NAME)-windows-amd64.dll.gz > $(DESKTOP_OUT)/libcore.dll
+          # import certificate and provisioning profile from secrets
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
+          echo -n "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode -o $PP_PATH
+          echo -n "$BUILD_PACKET_TUNNEL_PROVISION_PROFILE_BASE64" | base64 --decode -o $PP_PACKET_TUNNEL_PATH
 
-linux-libs:
-	mkdir -p $(DESKTOP_OUT)
-	curl -L $(CORE_URL)/$(CORE_NAME)-linux-amd64.so -o $(DESKTOP_OUT)/libcore.so
+          # create temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
 
-macos-libs:
-	mkdir -p $(DESKTOP_OUT)/ &&\
-	curl -L $(CORE_URL)/$(CORE_NAME)-macos-universal.dylib -o $(DESKTOP_OUT)/libcore.dylib
+          # import certificate to keychain
+          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
 
-ios-libs: #not tested
-	mkdir -p $(DESKTOP_OUT)/ &&\
-	rm -rf $(IOS_OUT)/libcore.xcframework
-	curl -L $(CORE_URL)/$(CORE_NAME)-ios.xcframework.tar.gz | tar xz -C "$(IOS_OUT)" && \
-	mv $(IOS_OUT)/$(CORE_NAME)-ios.xcframework $(IOS_OUT)/libcore.xcframework
+          # apply provisioning profile
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles
+          cp $PP_PACKET_TUNNEL_PATH ~/Library/MobileDevice/Provisioning\ Profiles
 
-get-geo-assets:
-	curl -L https://github.com/SagerNet/sing-geoip/releases/latest/download/geoip.db -o $(GEO_ASSETS_DIR)/geoip.db
-	curl -L https://github.com/SagerNet/sing-geosite/releases/latest/download/geosite.db -o $(GEO_ASSETS_DIR)/geosite.db
+      - name: Release ${{ matrix.platform }}
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        run: |
+          make ${{ matrix.platform }}-release
 
-build-headers:
-	make -C libcore/mobile -f Makefile headers && mv $(BINDIR)/$(CORE_NAME)-headers.h $(BINDIR)/libcore.h
+      - name: Upload Debug Symbols
+        if: ${{ github.ref_type == 'tag' }}
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+          SENTRY_DIST: ${{ matrix.platform == 'android-aab' && 'google-play' || 'general' }}
+        run: |
+          flutter packages pub run sentry_dart_plugin
 
-build-android-libs:
-	make -C libcore/mobile -f Makefile android && mv $(BINDIR)/$(CORE_NAME)-android.aar $(ANDROID_OUT)/libcore.aar
+      - name: Copy to out Windows
+        if: matrix.platform == 'windows'
+        run: |
+          New-Item -ItemType Directory -Force -Name "out"
+          New-Item -ItemType Directory -Force -Name "tmp_out"
+          $EXT_ARRAY = "${{ matrix.targets }}" -split ","
+          foreach ($EXT in $EXT_ARRAY) {
+              # Find all files with this extension in the current directory, and copy them to "out" directory
+              Get-ChildItem -Recurse -File -Filter "*setup.$EXT" | Copy-Item -Destination "out" -ErrorAction SilentlyContinue
+              move out\*setup.$EXT tmp_out\setup.$EXT
+              Get-ChildItem -Recurse -File -Filter "*.$EXT"
+          }
 
-build-windows-libs:
-	make -C libcore/mobile -f Makefile windows-amd64 && mv $(BINDIR)/$(CORE_NAME)-windows-amd64.dll $(DESKTOP_OUT)/libcore.dll
-
-build-linux-libs:
-	make -C libcore/mobile -f Makefile linux-amd64 && mv $(BINDIR)/$(CORE_NAME)-linux-amd64.so $(DESKTOP_OUT)/libcore.so
-
-build-macos-libs:
-	make -C libcore/mobile -f Makefile macos-universal && mv $(BINDIR)/$(CORE_NAME)-macos-universal.dylib $(DESKTOP_OUT)/libcore.dylib
-
-build-ios-libs: 
-	make -C libcore/mobile -f Makefile ios  && mv $(BINDIR)/$(CORE_NAME)-ios.xcframework $(IOS_OUT)/libcore.xcframework
-
-release: # Create a new tag for release.
-	@echo "previous version was $$(git describe --tags $$(git rev-list --tags --max-count=1))"
-	@echo "WARNING: This operation will creates version tag and push to github"
-	@bash -c '\
-	read -p "Version? (provide the next x.y.z semver) : " TAG && \
-	echo $$TAG &&\
-	[[ "$$TAG" =~ ^[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,2}(\.dev)?$$ ]] || { echo "Incorrect tag. e.g., 1.2.3 or 1.2.3.dev"; exit 1; } && \
-	IFS="." read -r -a VERSION_ARRAY <<< "$$TAG" && \
-	VERSION_STR="$${VERSION_ARRAY[0]}.$${VERSION_ARRAY[1]}.$${VERSION_ARRAY[2]}" && \
-	BUILD_NUMBER=$$(( $${VERSION_ARRAY[0]} * 10000 + $${VERSION_ARRAY[1]} * 100 + $${VERSION_ARRAY[2]} )) && \
-	echo "version: $${VERSION_STR}+$${BUILD_NUMBER}" && \
-	sed -i "s/^version: .*/version: $${VERSION_STR}\+$${BUILD_NUMBER}/g" pubspec.yaml && \
-	git tag $${TAG} > /dev/null && \
-	git tag -d $${TAG} > /dev/null && \
-	git add pubspec.yaml CHANGELOG.md && \
-	git commit -m "release: version $${TAG}" && \
-	echo "creating git tag : v$${TAG}" && \
-	git tag v$${TAG} && \
-	git push -u origin HEAD --tags && \
-	echo "Github Actions will detect the new tag and release the new version."'
-
-
-
-ios-temp-preapre: 
-	flutter upgrade
-	flutter pub upgrade
-	make prepare platform=ios
-	flutter build ios-framework
-	cd ios
-	pod install
-	cd ..
-	flutter run
-	#Link the built App and Flutter and url_launcher_ios frameworks (or all created frameworks? i dunno, but i tried) from Release folder to Xcode project in Runner target’s Build Phases as Linked
-
-	#change ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES  to $(inherited)
-
-	#also add $(inherited) as 1st option to OTHER_LDFLAGS (Other Linker Flags)
+          xcopy /s /v '.\.github\help\mac-windows\' .\tmp_out\
+          cd tmp_out
+          Compress-Archive  -Path .\* -DestinationPath  ..\out\hiddify-${{ matrix.platform }}-x64-setup.zip
+          cd ..
 
 
-	#add $(PROJECT_DIR)/Flutter/$(CONFIGURATION) to framework search path as 2nd
+          mkdir HiddifyNext-portable
+          xcopy /s /v D:\a\hiddify-next\hiddify-next\build\windows\runner\Release\ .\HiddifyNext-portable\
+          xcopy /s /v '.\.github\help\mac-windows\' .\HiddifyNext-portable\
+          cd HiddifyNext-portable
+          Compress-Archive .\ ..\out\hiddify-${{ matrix.platform }}-x64-portable.zip
 
-	#in Runner target go to Build Phases in Copy Bundle Resources section remove Runner.app
+      - name: Copy to out Android apk
+        if: matrix.platform == 'android-apk'
+        run: |
+          mkdir out
+          ls -R ./build/app/outputs
+          cp ./build/app/outputs/flutter-apk/*arm64-v8a*.apk out/hiddify-android-arm64.apk || echo "no arm64 apk"
+          cp ./build/app/outputs/flutter-apk/*armeabi-v7a*.apk out/hiddify-android-arm7.apk || echo "no arm7 apk"
+          cp ./build/app/outputs/flutter-apk/*x86_64*.apk out/hiddify-android-x86_64.apk || echo "no x64 apk"
+          cp ./build/app/outputs/flutter-apk/app-release.apk out/hiddify-android-universal.apk || echo "no universal apk"
 
-	# right click on Runner.xcodeproj click on Show Package Content open project.pbxproj  replace
-	#Flutter/Release/App.xcframework
-	#Flutter/Release/Flutter.xcframework
-	# Flutter/Release/url_launcher_ios.xcframework
-	# with
-	# "Flutter/$(CONFIGURATION)/App.xcframework"
-	# "Flutter/$(CONFIGURATION)/Flutter.xcframework"
-	# "Flutter/$(CONFIGURATION)/url_launcher_ios.xcframework"
-	# (if you added all frameworks, you should do this pattern for all of them too, you need this step to be able to run on simulators)
+      - name: Copy to out Android aab
+        if: matrix.platform == 'android-aab'
+        run: |
+          mkdir out
+          ls -R ./build/app/outputs
+          cp ./build/app/outputs/bundle/release/app-release.aab out/hiddify-android-market.aab || echo "no aab"
 
-	# done remove	# GeneratedPluginRegistrant.h 	# GeneratedPluginRegistrant.m 	# from Runner folder and add newly generated ones from build/ios/framework folder to Xcode and also check the copy box
+      - name: Copy to out unix
+        if: matrix.platform == 'linux' || matrix.platform == 'macos' || matrix.platform == 'ios'
+        run: |
+          ls -R dist/
+          mkdir out
+          mkdir tmp_out
+          EXT="${{ matrix.targets }}"
+          mv dist/*/*.$EXT tmp_out/${{matrix.filename}}.$EXT
+          chmod +x tmp_out/${{matrix.filename}}.$EXT
+          if [ "${{matrix.platform}}" == "linux" ];then
+            cp ./.github/help/linux/* tmp_out/
+          else
+            cp ./.github/help/mac-windows/* tmp_out/
+          fi
+          if [[ "${{matrix.platform}}" == 'ios' ]];then
+            mv tmp_out/${{matrix.filename}}.ipa bin/${{matrix.filename}}.ipa
+          else
+            cd tmp_out
+            7z a ${{matrix.filename}}.zip ./
+            mv *.zip ../out/
+          fi
 
-	# done in pod file 	# remove comment from line 2 and change it to 	# platform :ios, '12.1' 	# and add
+      # - name: Copy to out unix
+      #   if: matrix.platform == 'linux' || matrix.platform == 'macos' || matrix.platform == 'ios'
+      #   run: |
+      #     ls -R dist/
+      #     mkdir out
+      #     mkdir tmp_out
+      #     IFS=',' read -r -a EXT_ARRAY <<< "${{ matrix.targets }}"
+      #     # Loop over extensions
+      #     for EXT in "${EXT_ARRAY[@]}"; do
+      #         # Find all files with this extension in SRC_DIR, and copy them to DST_DIR
+      #         find "." -type f -name "*.$EXT" -exec cp {} "tmp_out" \;
+      #     done
 
-	#	 target.build_configurations.each do |config|
-	#	 config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '12.1'
-	#	 end
+      #     mv tmp_out/*.AppImage tmp_out/hiddify-linux-x64.AppImage &&\
+      #     chmod +x tmp_out/hiddify-linux-x64.AppImage &&\
+      #     cp ./.github/help/linux/* tmp_out/ \
+      #     ||echo "no app image"
+      #     mv tmp_out/*.dmg tmp_out/hiddify-macos-universal.dmg && \
+      #     cp ./.github/help/mac-windows/* tmp_out/ \
+      #     || echo "no macos dmg"
+      #     cd tmp_out && 7z a hiddify-${{matrix.platform}}-x64.zip ./ && mv *.zip ../out/
+      # Important! Cleanup: remove the certificate and provisioning profile from the runner!
+      - name: Clean up keychain and provisioning profile
+        if: ${{ always() && startsWith(matrix.os,'macos')}}
+        run: |
+          security delete-keychain $RUNNER_TEMP/app-signing.keychain-db
+          rm ~/Library/MobileDevice/Provisioning\ Profiles/build_pp.mobileprovision
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifact
+          path: ./out
+          retention-days: 2
 
-	# before 1st ‘end’ in post_install function
+  upload-draft:
+    permissions: write-all
+    if: ${{ github.ref_type == 'branch' }}
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: artifact
+          path: ./out/
 
-	# add
-	# -fcxx-modules
-	# to
-	# OTHER_CPLUSPLUSFLAGS
-	# in Build Settings
-	# as 1st option
+      - name: Display Files Structure
+        run: ls -R
+        working-directory: ./out
 
-	# flutter upgrade
-	# flutter pub upgrade
-	# cd ios
-	# pod install
+      - name: Delete Current Release Assets
+        uses: 8Mi-Tech/delete-release-assets-action@main
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: 'draft'
+          deleteOnlyFromDrafts: false
 
-	# (note: i removed group and network extensions from targets to be able to build with free account)
+      - name: Create or Update Draft Release
+        uses: softprops/action-gh-release@v1
+        if: ${{ github.ref_type != 'tag' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: ./out/*
+          name: 'draft'
+          tag_name: 'draft'
+          prerelease: true
 
-	# now build
-	# it will build (even on simulator)
-	# but for some not known reason, it will not run for me on my device and will refuse to install on simulator, maybe because the removed extensions? i dunno
-	# even now it can be an arsehole and return failed with exit code 1 so don’t panic
+  upload-release:
+    permissions: write-all
+    if: ${{ github.ref_type == 'tag' }}
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: artifact
+          path: ./out/
+
+      - name: Display Files Structure
+        run: |
+          ls -R ./out
+          ls -R ./.github/
+          ls -R ./.git/
+          mv out/hiddify-android-market.aab  hiddify-android-market.aab
+
+      - name: prepare_release_message
+        run: |
+          pip install gitchangelog pystache mustache markdown
+          # prelease=$(curl --silent "https://api.github.com/repos/hiddify/hiddify-next/releases/latest" | grep -Po '"tag_name": "\K.*?(?=")')
+          # current="${{ github.ref_name }}"
+          # gitchangelog $prelease..$current > release.md
+          sed 's|RELEASE_TAG|${{ github.ref_name }}|g' ./.github/release_message.md >> release.md
+
+      - name: Upload Release
+        uses: softprops/action-gh-release@v1
+        if: ${{ success() }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          prerelease: ${{ env.CHANNEL == 'dev' }}
+          tag_name: ${{ github.ref_name }}
+          body_path: './release.md'
+          files: ./out/*
+
+      - name: Create service_account.json
+        run: echo '${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}' > service_account.json
+
+      - name: Deploy to Google Play Internal Testers
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJson: service_account.json
+          packageName: app.hiddify.com
+          releaseName: ${{ github.ref }}
+          releaseFiles: ./hiddify-android-market.aab
+          # track: ${{ env.CHANNEL == 'dev' && 'beta' || 'internal' }}
+          track:  'beta'
+
+      # - name: "Upload app to TestFlight"
+      #   uses: apple-actions/upload-testflight-build@v1
+      #   with:
+      #     app-path: "./hiddify-ios-universal.ipa"
+      #     issuer-id: ${{ secrets.APPSTORE_ISSUER_ID }}
+      #     api-key-id: ${{ secrets.APPSTORE_API_KEY_ID }}
+      #     api-private-key: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+
+  upload-winget-release:
+    permissions: write-all
+    if: ${{ github.ref_type == 'tag' }}
+    needs: [upload-release]
+    runs-on: windows-latest
+    steps:
+      - name: Find & Replace
+        id: version
+        uses: ashley-taylor/regex-property-action@v1.3
+        with:
+          value: '${{ github.ref_name }}'
+          regex: '^v|.dev$'
+          flags: 'gi' # Optional, defaults to "g"
+          replacement: ''
+      - name: Winget Publish
+        if: ${{ env.CHANNEL != 'dev' }}
+        uses: isaacrlevin/winget-publish-action@v.5
+        with:
+          publish-type: 'Update'
+          user: 'Hiddify'
+          package: 'Next'
+          version: ${{ steps.version.outputs.value }}
+          url: 'https://github.com/hiddify/hiddify-next/releases/download/${{ github.ref_name }}/hiddify-windows-x64-setup.zip'
+          token: ${{ secrets.WINGET_TOKEN }}
+
+      - name: Winget Publish Beta
+        uses: isaacrlevin/winget-publish-action@v.5
+        with:
+          publish-type: 'Update'
+          user: 'Hiddify'
+          package: 'Next.Beta'
+          version: ${{ steps.version.outputs.value }}
+          url: 'https://github.com/hiddify/hiddify-next/releases/download/${{ github.ref_name }}/hiddify-windows-x64-setup.zip'
+          token: ${{ secrets.WINGET_TOKEN }}
