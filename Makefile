@@ -60,7 +60,7 @@ android-aab-release: build-android-libs # DEPENDS ON BUILDING THE AAR
 
 # Esta regla construye el AAR de Android desde el submódulo libcore
 build-android-libs:
-	cd libcore && make -f mobile/Makefile android && mv ./bin/hiddify-libcore-android.aar ../android/app/libs/libcore.aar
+	cd libcore && make -f Makefile android && mv ./bin/hiddify-libcore-android.aar ../android/app/libs/libcore.aar
 
 get-geo-assets:
 	curl -L https://github.com/SagerNet/sing-geoip/releases/latest/download/geoip.db -o $(GEO_ASSETS_DIR)/geoip.db
