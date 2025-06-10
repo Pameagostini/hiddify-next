@@ -3,8 +3,8 @@ on:
   push:
     branches:
       - main
-      - dev # Asegúrate de que 'dev' esté también
-      - fix/compile-errors # ¡Añadimos nuestra rama para que el push la active!
+      - dev
+      - fix/compile-errors
     tags:
       - 'v*'
     paths-ignore:
@@ -13,16 +13,16 @@ on:
       - '.github/**'
       - '!.github/workflows/build.yml'
       - 'appcast.xml'
-  pull_request: # ¡Descomentamos esta sección y la configuramos!
+  pull_request:
     branches:
       - main
-      - dev # Asegúrate de que 'dev' esté también
-      - fix/compile-errors # ¡Añadimos nuestra rama aquí para que el PR la active!
+      - dev
+      - fix/compile-errors
 
-env: # ¡Este bloque 'env' debe ir aquí, justo después de 'on:'!
+env:
   CHANNEL: ${{ github.ref_type == 'tag' && endsWith(github.ref_name, 'dev') && 'dev' || github.ref_type != 'tag' && 'dev' || 'prod' }}
   NDK_VERSION: r26b
-concurrency: # Y 'concurrency' va justo después de 'env'
+concurrency:
   group: ${{ github.ref }}-${{ github.workflow }}
   cancel-in-progress: true
 
@@ -66,16 +66,13 @@ jobs:
         id: setup-ndk
         with:
           ndk-version: ${{ env.NDK_VERSION }}
-          add-to-path: true
-          link-to-sdk: true
 
-      - name: Get Geo Assets
-        run: |
-          make get-geo-assets
-
-      - name: Get Dependencies
-        run: |
-          make get
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: 'libcore/go.mod'
+          cache: true
+          cache-dependency-path: 'libcore/go.sum'
 
       - name: Generate
         run: |
@@ -84,8 +81,7 @@ jobs:
 
       - name: Get Libs ${{ matrix.platform }}
         run: |
-           # Para Android, llamar directamente a la regla 'android-libs' en el Makefile
-           make android-libs
+           make build-android-libs
 
       - name: Setup Android Signing Properties
         if: startsWith(matrix.platform,'android')
@@ -96,129 +92,12 @@ jobs:
           echo "keyPassword=${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}" >> android/key.properties
           echo "keyAlias=${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}" >> android/key.properties
 
-      - name: Release ${{ matrix.platform }}
-        env:
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-        run: |
-          make ${{ matrix.platform }}-release
+      - name: make ${{ matrix.platform }}-release
+        run: make ${{ matrix.platform }}-release
 
-      - name: Upload Debug Symbols
-        if: ${{ github.ref_type == 'tag' }}
-        env:
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
-          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
-          SENTRY_DIST: ${{ matrix.platform == 'android-aab' && 'google-play' || 'general' }}
-        run: |
-          flutter packages pub run sentry_dart_plugin
-
-      - name: Copy to out Android apk
-        if: matrix.platform == 'android-apk'
-        run: |
-          mkdir out
-          ls -R ./build/app/outputs
-          cp ./build/app/outputs/flutter-apk/*arm64-v8a*.apk out/hiddify-android-arm64.apk || echo "no arm64 apk"
-          cp ./build/app/outputs/flutter-apk/*armeabi-v7a*.apk out/hiddify-android-arm7.apk || echo "no arm7 apk"
-          cp ./build/app/outputs/flutter-apk/*x86_64*.apk out/hiddify-android-x86_64.apk || echo "no x64 apk"
-          cp ./build/app/outputs/flutter-apk/app-release.apk out/hiddify-android-universal.apk || echo "no universal apk"
-
-      - name: Copy to out Android aab
-        if: matrix.platform == 'android-aab'
-        run: |
-          mkdir out
-          ls -R ./build/app/outputs
-          cp ./build/app/outputs/bundle/release/app-release.aab out/hiddify-android-market.aab || echo "no aab"
-
-      - name: Upload Artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: artifact
-          path: ./out
-          retention-days: 2
-
-  upload-draft:
-    permissions: write-all
-    if: ${{ github.ref_type == 'branch' }}
-    needs: [build]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: artifact
-          path: ./out/
-
-      - name: Display Files Structure
-        run: ls -R
-        working-directory: ./out
-
-      - name: Delete Current Release Assets
-        uses: 8Mi-Tech/delete-release-assets-action@main
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          tag: 'draft'
-          deleteOnlyFromDrafts: false
-
-      - name: Create or Update Draft Release
-        uses: softprops/action-gh-release@v1
-        if: ${{ github.ref_type != 'tag' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          files: ./out/*
-          name: 'draft'
-          tag_name: 'draft'
-          prerelease: true
-
-  upload-release:
-    permissions: write-all
-    if: ${{ github.ref_type == 'tag' }}
-    needs: [build]
-    runs-on: ubuntu-latest
-    steps:
-      - name: checkout
-        uses: actions/checkout@v3
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: artifact
-          path: ./out/
-
-      - name: Display Files Structure
-        run: |
-          ls -R ./out
-          ls -R ./.github/
-          ls -R ./.git/
-          mv out/hiddify-android-market.aab  hiddify-android-market.aab
-
-      - name: prepare_release_message
-        run: |
-          pip install gitchangelog pystache mustache markdown
-          # prelease=$(curl --silent "https://api.github.com/repos/hiddify/hiddify-next/releases/latest" | grep -Po '"tag_name": "\K.*?(?=")')
-          # current="${{ github.ref_name }}"
-          # gitchangelog $prelease..$current > release.md
-          sed 's|RELEASE_TAG|${{ github.ref_name }}|g' ./.github/release_message.md >> release.md
-
-      - name: Upload Release
-        uses: softprops/action-gh-release@v1
-        if: ${{ success() }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          prerelease: ${{ env.CHANNEL == 'dev' }}
-          tag_name: ${{ github.ref_name }}
-          body_path: './release.md'
-          files: ./out/*
-
-      - name: Create service_account.json
-        run: echo '${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}' > service_account.json
-
-      - name: Deploy to Google Play Internal Testers
-        uses: r0adkll/upload-google-play@v1
-        with:
-          serviceAccountJson: service_account.json
-          packageName: app.hiddify.com
-          releaseName: ${{ github.ref }}
-          releaseFiles: ./hiddify-android-market.aab
-          # track: ${{ env.CHANNEL == 'dev' && 'beta' || 'internal' }}
-          track:  'beta'
+          name: ${{ matrix.filename || format('{0}-{1}-{2}', github.ref_name, matrix.platform, github.sha) }}
+          path: build/app/outputs/flutter-build/*
+          if-no-files-found: ignore
