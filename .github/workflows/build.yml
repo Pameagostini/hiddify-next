@@ -1,125 +1,120 @@
 name: Build
+
 on:
+  workflow_dispatch:
   push:
-    branches:
-      - main
-      - dev
-      - fix/compile-errors
     tags:
-      - 'v*'
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.github/**'
-      - '!.github/workflows/build.yml'
-      - 'appcast.xml'
+      - "v*"
   pull_request:
     branches:
       - main
-      - dev
-      - fix/compile-errors
-
-env:
-  CHANNEL: ${{ github.ref_type == 'tag' && endsWith(github.ref_name, 'dev') && 'dev' || github.ref_type != 'tag' && 'dev' || 'prod' }}
-  NDK_VERSION: r26b
-concurrency:
-  group: ${{ github.ref }}-${{ github.workflow }}
-  cancel-in-progress: true
 
 jobs:
-  build:
-    permissions: write-all
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: android-apk
-            os: ubuntu-latest
-            targets: apk
-
-          - platform: android-aab
-            os: ubuntu-latest
-            targets: aab
-
-    runs-on: ${{ matrix.os }}
+  build-android:
+    runs-on: ubuntu-latest
     steps:
-      - name: checkout
-        uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
-          submodules: true # ¡ESTA ES LA LÍNEA NUEVA Y CRÍTICA!
+          distribution: 'temurin'
+          java-version: '17'
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@v2.16.0
         with:
-          flutter-version: '3.16.x'
+          flutter-version: '3.19.6'
           channel: 'stable'
           cache: true
 
-      - name: Setup Java
-        if: startsWith(matrix.platform,'android')
-        uses: actions/setup-java@v3
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
-          distribution: 'temurin'
-          java-version: 11
+          go-version: '1.21'
+          cache-dependency-path: |
+            libcore/go.sum
 
       - name: Setup NDK
-        if: startsWith(matrix.platform,'android')
-        uses: nttld/setup-ndk@v1.4.1
-        id: setup-ndk
+        uses: nttld/setup-ndk@v1.4.2
         with:
-          ndk-version: ${{ env.NDK_VERSION }}
+          ndk-version: r25c
+          add-to-path: false
 
-      - name: Set up Go
-        uses: actions/setup-go@v4
+      - name: Cache Gradle
+        uses: actions/cache@v4
         with:
-          go-version-file: 'libcore/go.mod'
-          cache: true
-          cache-dependency-path: 'libcore/go.sum'
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
 
-      - name: Prepare Build Environment
-        run: |
-          make get
-          make get-geo-assets
-          make translate
-          make gen
+      - name: Make android prepare
+        run: make android-prepare
 
-      - name: Debug Before Get Libs
-        run: |
-          echo "Current working directory:"
-          pwd
-          echo "Files in current directory:"
-          ls -l
-          echo "Checking dependencies.properties:"
-          if [ -f "dependencies.properties" ]; then
-            echo "dependencies.properties exists. Content:"
-            cat dependencies.properties
-          else
-            echo "Error: dependencies.properties does NOT exist!"
-          fi
-          echo "Content of Makefile:"
-          cat Makefile
+      - name: Get Flutter dependencies
+        run: flutter pub get
 
-      - name: Get Libs ${{ matrix.platform }}
-        run: |
-          set -euxo pipefail
-          echo "Attempting to run make -f Makefile build-android-libs" # CAMBIO CLAVE AQUÍ
-          make -f Makefile build-android-libs # CAMBIO CLAVE AQUÍ
+      - name: Generate code
+        run: dart run build_runner build --delete-conflicting-outputs
 
-      - name: Setup Android Signing Properties
-        if: startsWith(matrix.platform,'android')
-        run: |
-          echo "${{ secrets.ANDROID_SIGNING_KEY }}" | base64 --decode > android/key.jks
-          echo "storeFile=$(pwd)/android/key.jks" > android/key.properties
-          echo "storePassword=${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}" >> android/key.properties
-          echo "keyPassword=${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}" >> android/key.properties
-          echo "keyAlias=${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}" >> android/key.properties
+      - name: Build APK (Debug)
+        run: flutter build apk --debug
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
 
-      - name: make ${{ matrix.platform }}-release
-        run: make ${{ matrix.platform }}-release
+      - name: Build APK (Release)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: flutter build apk --release
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
 
-      - name: Upload artifacts
+      - name: Build AAB (Release)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: flutter build appbundle --release
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+
+      - name: Upload Debug APK
+        if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.filename || format('{0}-{1}-{2}', github.ref_name, matrix.platform, github.sha) }}
-          path: build/app/outputs/flutter-build/*
-          if-no-files-found: ignore
+          name: android-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+
+      - name: Upload Release Artifacts
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release
+          path: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/bundle/release/app-release.aab
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-android]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Android artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: android-release
+          path: ./artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ./artifacts/app-release.apk
+            ./artifacts/app-release.aab
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
