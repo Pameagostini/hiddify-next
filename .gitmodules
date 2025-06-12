@@ -1,3 +1,95 @@
-[submodule "libcore"]
-    path = libcore
-    url = https://github.com/hiddify/libcore.git
+name: Build Android TV App
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        # NO usar submodules: true aquí porque primero necesitamos arreglar la referencia
+        fetch-depth: 0
+
+    - name: Fix libcore submodule reference
+      run: |
+        echo "🔧 Fixing libcore submodule reference..."
+        
+        # Remover submódulo problemático si existe
+        if git submodule status | grep -q "libcore"; then
+          echo "Removing broken libcore submodule..."
+          git submodule deinit -f libcore || true
+          git rm -f libcore || true
+          rm -rf .git/modules/libcore || true
+        fi
+        
+        # Crear/actualizar .gitmodules con la referencia correcta
+        cat > .gitmodules << 'EOF'
+        [submodule "libcore"]
+        	path = libcore
+        	url = https://github.com/hiddify/hiddify-core.git
+        	branch = main
+        EOF
+        
+        echo "✅ .gitmodules updated"
+
+    - name: Initialize corrected submodules
+      run: |
+        echo "🔄 Initializing submodules..."
+        
+        # Agregar el submódulo corregido
+        git submodule add -f https://github.com/hiddify/hiddify-core.git libcore || true
+        
+        # Sincronizar y actualizar todos los submódulos
+        git submodule sync --recursive
+        git submodule update --init --recursive --force --depth=1
+        
+        echo "✅ Submodules initialized successfully"
+        
+        # Verificar que el submódulo funciona
+        if [ -d "libcore" ] && [ "$(ls -A libcore 2>/dev/null)" ]; then
+          echo "✅ libcore submodule is working correctly"
+          echo "📄 libcore contains: $(ls -la libcore | wc -l) items"
+        else
+          echo "❌ libcore submodule failed to initialize"
+          exit 1
+        fi
+
+    - name: Set up JDK
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Cache Gradle packages
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+
+    - name: Make gradlew executable
+      run: chmod +x ./gradlew
+
+    - name: Build Android TV APK
+      run: |
+        echo "🚀 Building Android TV version..."
+        ./gradlew assembleRelease
+        
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: android-tv-apk
+        path: app/build/outputs/apk/release/*.apk
