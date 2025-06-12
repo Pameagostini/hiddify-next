@@ -59,7 +59,7 @@ jobs:
         if: startsWith(matrix.platform,'android')
         uses: actions/setup-java@v3
         with:
-          distribution: 'zulu'
+          distribution: 'temurin'
           java-version: 11
 
       - name: Setup NDK
