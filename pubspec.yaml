@@ -39,7 +39,7 @@ dependencies:
   
   # Networking
   dio: ^5.7.0
-  dio_certificate_pinning: ^6.0.0
+  flutter_certificate_pinning: ^3.0.1
   
   # Serialization
   json_annotation: ^4.9.0
