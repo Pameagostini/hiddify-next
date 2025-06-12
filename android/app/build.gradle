@@ -27,7 +27,8 @@ apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
 
 android {
     namespace 'com.hiddify.hiddify'
-    compileSdk 35
+    compileSdk 34
+    buildToolsVersion "34.0.0"
     ndkVersion "25.1.8937393"
 
     compileOptions {
