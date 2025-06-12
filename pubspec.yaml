@@ -1,80 +1,113 @@
 name: hiddify_next
-description: Multi-platform auto-proxy client for Android TV
+description: "Multi-platform auto-proxy client, supporting Sing-box, X-ray, TUIC, Hysteria, Reality, Trojan, SSH etc. It's an open-source, secure and ad-free."
 publish_to: 'none'
-version: 2.5.7+20250612
+version: 1.5.0+1500
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
-  flutter: ">=3.13.4"
+  flutter: ">=3.19.0"
 
 dependencies:
   flutter:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
-  
+
   # Core dependencies
   cupertino_icons: ^1.0.6
-  dio: ^5.4.0
-  freezed_annotation: ^2.4.1
-  json_annotation: ^4.8.1
-  riverpod_annotation: ^2.3.3
-  flutter_riverpod: ^2.4.9
-  go_router: ^12.1.3
+  shared_preferences: ^2.2.2
+  path_provider: ^2.1.2
+  package_info_plus: ^7.0.0
+  device_info_plus: ^10.1.0
+  connectivity_plus: ^6.0.2
+  permission_handler: ^11.3.1
   
-  # Android TV specific dependencies
-  flutter_leanback: ^0.4.0  # Android TV UI components
-  tv_focus: ^1.0.0          # Better focus management for TV
-  
-  # UI & Navigation
-  flutter_hooks: ^0.20.3
-  hooks_riverpod: ^2.4.9
+  # UI and theming
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+  go_router: ^14.0.2
   flutter_animate: ^4.5.0
-  gap: ^3.0.1
+  sliver_tools: ^0.2.12
+  flutter_hooks: ^0.20.5
+  hooks_riverpod: ^2.5.1
+  
+  # Networking and HTTP
+  dio: ^5.4.3+1
+  dio_certificate_pinning: ^6.0.0
+  retrofit: ^4.1.0
+  json_annotation: ^4.8.1
+  
+  # State management and data
+  freezed_annotation: ^2.4.1
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  
+  # Utilities
+  uuid: ^4.3.3
+  intl: ^0.19.0
+  url_launcher: ^6.2.5
+  share_plus: ^8.0.2
+  file_picker: ^8.0.0+1
+  path: ^1.9.0
+  
+  # Logging and debugging
+  logger: ^2.1.0
+  flutter_loggy: ^2.0.2
+  loggy: ^2.0.3
   
   # Platform specific
-  window_manager: ^0.3.7
-  tray_manager: ^0.2.0
+  window_manager: ^0.3.8
+  tray_manager: ^0.2.2
+  launch_at_startup: ^0.2.2
   protocol_handler: ^0.2.0
+  system_tray: ^2.0.3
   
-  # Storage & Preferences
-  shared_preferences: ^2.2.2
-  path_provider: ^2.1.1
-  path: ^1.8.3
+  # Mobile specific
+  mobile_scanner: ^4.0.1
+  qr_flutter: ^4.1.0
+  wakelock_plus: ^1.2.5
   
-  # Network & Proxy
-  connectivity_plus: ^5.0.2
-  device_info_plus: ^9.1.1
-  package_info_plus: ^4.2.0
+  # Native bindings
+  ffi: ^2.1.2
   
-  # Utils
-  intl: ^0.18.1
-  uuid: ^4.2.1
-  url_launcher: ^6.2.2
+  # Media and graphics
+  flutter_svg: ^2.0.10+1
+  cached_network_image: ^3.3.1
   
-  # Native bridge
-  flutter_rust_bridge: ^1.82.6
-  ffi: ^2.1.0
+  # Platform channels
+  flutter_native_splash: ^2.4.0
+  
+  # Custom packages (if these exist in your project)
+  # Remove or replace these if they don't exist:
+  # singbox: ^0.1.0  # Replace with actual package or path dependency
+  # gen: ^0.1.0      # Usually generated code, might be path dependency
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^3.0.1
-  build_runner: ^2.4.7
-  freezed: ^2.4.6
+  
+  # Code generation
+  build_runner: ^2.4.9
+  freezed: ^2.4.7
   json_serializable: ^6.7.1
-  riverpod_generator: ^2.3.9
-  custom_lint: ^0.5.7
-  riverpod_lint: ^2.3.7
+  riverpod_generator: ^2.4.0
+  retrofit_generator: ^8.1.0
+  hive_generator: ^2.0.1
+  
+  # Linting
+  flutter_lints: ^3.0.2
+  
+  # Testing
+  integration_test:
+    sdk: flutter
 
 flutter:
   uses-material-design: true
-  generate: true
   
   assets:
+    - assets/
     - assets/images/
     - assets/core/
-    - assets/translations/
+    - assets/geo/
   
   fonts:
     - family: Vazirmatn
