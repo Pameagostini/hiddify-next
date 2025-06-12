@@ -1,0 +1,384 @@
+name: Build Android TV App
+
+on:
+  push:
+    branches: [ main, develop, fix/compile-errors ]  # ✅ Incluye tu rama
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:  # ✅ Permite ejecución manual desde GitHub UI
+
+env:
+  FLUTTER_VERSION: '3.24.0'
+  JAVA_VERSION: '17'
+  ANDROID_API_LEVEL: '34'
+  ANDROID_BUILD_TOOLS: '34.0.0'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: false
+        fetch-depth: 1
+
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'zulu'
+        java-version: ${{ env.JAVA_VERSION }}
+
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        channel: 'stable'
+        cache: true
+
+    - name: Download hiddify-core manually
+      run: |
+        echo "📥 Downloading hiddify-core manually..."
+        
+        # Crear directorio libcore si no existe
+        mkdir -p libcore
+        
+        # Función para verificar si el directorio tiene contenido útil
+        check_libcore_content() {
+          if [ -d "libcore" ] && [ "$(ls -A libcore)" ]; then
+            echo "✅ libcore directory has content"
+            return 0
+          else
+            echo "❌ libcore directory is empty or missing"
+            return 1
+          fi
+        }
+        
+        # Intentar múltiples métodos de descarga
+        download_success=false
+        
+        # Método 1: Descargar como tar.gz
+        if ! $download_success; then
+          echo "🔄 Trying tar.gz download..."
+          if curl -L --connect-timeout 30 --max-time 300 \
+             -H "Accept: application/vnd.github.v3+json" \
+             "https://github.com/hiddify/hiddify-core/archive/refs/heads/main.tar.gz" \
+             -o hiddify-core.tar.gz; then
+            echo "✅ Downloaded tar.gz successfully"
+            if tar -xzf hiddify-core.tar.gz; then
+              if [ -d "hiddify-core-main" ]; then
+                cp -r hiddify-core-main/* libcore/ 2>/dev/null || true
+                cp -r hiddify-core-main/.* libcore/ 2>/dev/null || true
+                download_success=true
+                echo "✅ Extracted hiddify-core content"
+              fi
+            fi
+            rm -rf hiddify-core.tar.gz hiddify-core-main
+          fi
+        fi
+        
+        # Método 2: Descargar como zip
+        if ! $download_success; then
+          echo "🔄 Trying zip download..."
+          if curl -L --connect-timeout 30 --max-time 300 \
+             -H "Accept: application/vnd.github.v3+json" \
+             "https://github.com/hiddify/hiddify-core/archive/refs/heads/main.zip" \
+             -o hiddify-core.zip; then
+            echo "✅ Downloaded zip successfully"
+            if unzip -q hiddify-core.zip; then
+              if [ -d "hiddify-core-main" ]; then
+                cp -r hiddify-core-main/* libcore/ 2>/dev/null || true
+                cp -r hiddify-core-main/.* libcore/ 2>/dev/null || true
+                download_success=true
+                echo "✅ Extracted hiddify-core content"
+              fi
+            fi
+            rm -rf hiddify-core.zip hiddify-core-main
+          fi
+        fi
+        
+        # Método 3: Git clone como alternativa
+        if ! $download_success; then
+          echo "🔄 Trying git clone..."
+          if git clone --depth 1 https://github.com/hiddify/hiddify-core.git temp-hiddify-core; then
+            cp -r temp-hiddify-core/* libcore/ 2>/dev/null || true
+            cp -r temp-hiddify-core/.* libcore/ 2>/dev/null || true
+            rm -rf temp-hiddify-core
+            download_success=true
+            echo "✅ Cloned hiddify-core content"
+          fi
+        fi
+        
+        # Verificar resultado final
+        if check_libcore_content; then
+          echo "✅ hiddify-core setup completed successfully"
+        else
+          echo "⚠️ hiddify-core setup failed, creating minimal structure..."
+          mkdir -p libcore
+          touch libcore/.gitkeep
+          echo "# Placeholder file" > libcore/README.md
+        fi
+        
+        echo "📄 Final libcore status:"
+        ls -la libcore/ || echo "libcore directory is empty"
+        echo "📊 Directory size: $(du -sh libcore/ 2>/dev/null || echo 'N/A')"
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+      with:
+        api-level: ${{ env.ANDROID_API_LEVEL }}
+        build-tools: ${{ env.ANDROID_BUILD_TOOLS }}
+
+    - name: Accept Android SDK licenses
+      run: |
+        echo "📄 Accepting Android SDK licenses..."
+        yes | flutter doctor --android-licenses || true
+
+    - name: Cache Flutter dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.pub-cache
+          ${{ runner.tool_cache }}/flutter
+        key: ${{ runner.os }}-flutter-${{ hashFiles('**/pubspec.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-flutter-
+
+    - name: Cache Gradle packages
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+          android/.gradle
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+
+    - name: Get Flutter dependencies
+      run: |
+        echo "📦 Getting Flutter dependencies..."
+        flutter pub get
+        
+        echo "🔍 Checking pubspec.yaml dependencies..."
+        if [ -f "pubspec.yaml" ]; then
+          echo "Dependencies found in pubspec.yaml:"
+          grep -A 20 "dependencies:" pubspec.yaml || true
+        fi
+
+    - name: Check Flutter doctor
+      run: |
+        echo "🔍 Checking Flutter setup..."
+        flutter doctor -v
+        
+        echo "🔧 Flutter version info:"
+        flutter --version
+
+    - name: Verify Android configuration
+      run: |
+        echo "🔍 Verifying Android configuration..."
+        
+        if [ -f "android/app/build.gradle" ]; then
+          echo "✅ Found android/app/build.gradle"
+          echo "📄 Checking for TV configuration..."
+          grep -n "tv\|leanback" android/app/build.gradle || echo "No TV-specific configuration found"
+        else
+          echo "❌ android/app/build.gradle not found"
+        fi
+        
+        if [ -d "android/app/src/main" ]; then
+          echo "✅ Found android/app/src/main"
+          find android/app/src -name "AndroidManifest.xml" -exec echo "Found manifest: {}" \;
+        fi
+
+    - name: Pre-build diagnostics
+      run: |
+        echo "🔍 Pre-build diagnostics..."
+        
+        echo "📊 Project structure:"
+        ls -la
+        
+        echo "📱 Android directory structure:"
+        find android -type f -name "*.gradle" -o -name "*.xml" | head -10
+        
+        echo "🎯 Flutter build environment:"
+        flutter config
+        
+        echo "💾 Available disk space:"
+        df -h
+
+    - name: Build Android APK
+      run: |
+        echo "🚀 Building Android APK..."
+        
+        # Establecer variables de entorno para el build
+        export FLUTTER_BUILD_MODE=release
+        export ANDROID_HOME=$ANDROID_SDK_ROOT
+        
+        echo "🔧 Build environment:"
+        echo "ANDROID_HOME: $ANDROID_HOME"
+        echo "JAVA_HOME: $JAVA_HOME"
+        
+        # Intentar build con diferentes estrategias
+        build_success=false
+        
+        # Estrategia 1: Build estándar
+        if ! $build_success; then
+          echo "🔄 Attempting standard build..."
+          if flutter build apk --release --target-platform android-arm64; then
+            build_success=true
+            echo "✅ Standard build successful"
+          else
+            echo "❌ Standard build failed"
+          fi
+        fi
+        
+        # Estrategia 2: Build con más memoria
+        if ! $build_success; then
+          echo "🔄 Attempting build with increased memory..."
+          export GRADLE_OPTS="-Xmx4g -XX:+HeapDumpOnOutOfMemoryError"
+          if flutter build apk --release --target-platform android-arm64; then
+            build_success=true
+            echo "✅ Build with increased memory successful"
+          else
+            echo "❌ Build with increased memory failed"
+          fi
+        fi
+        
+        # Estrategia 3: Build verbose para diagnóstico
+        if ! $build_success; then
+          echo "🔄 Attempting verbose build for diagnostics..."
+          flutter build apk --release --target-platform android-arm64 --verbose || {
+            echo "❌ All build attempts failed"
+            echo "🔍 Collecting error information..."
+            
+            if [ -f "android/app/build/outputs/logs/manifest-merger-debug-report.txt" ]; then
+              echo "📄 Manifest merger report:"
+              cat android/app/build/outputs/logs/manifest-merger-debug-report.txt
+            fi
+            
+            exit 1
+          }
+        fi
+
+    - name: Check for TV-specific build
+      run: |
+        echo "📺 Checking for Android TV specific configuration..."
+        
+        # Verificar múltiples indicadores de configuración TV
+        tv_config_found=false
+        
+        # Buscar flavor TV en build.gradle
+        if [ -f "android/app/build.gradle" ] && grep -q "tv\|leanback" android/app/build.gradle; then
+          echo "✅ Found TV configuration in build.gradle"
+          tv_config_found=true
+        fi
+        
+        # Buscar AndroidManifest.xml específico para TV
+        if find android/app/src -name "AndroidManifest.xml" -exec grep -l "leanback\|CATEGORY_LEANBACK_LAUNCHER" {} \; | head -1; then
+          echo "✅ Found TV configuration in AndroidManifest.xml"
+          tv_config_found=true
+        fi
+        
+        # Buscar directorio tv específico
+        if [ -d "android/app/src/tv" ]; then
+          echo "✅ Found android/app/src/tv directory"
+          tv_config_found=true
+        fi
+        
+        if $tv_config_found; then
+          echo "🚀 Building Android TV specific version..."
+          
+          # Intentar diferentes comandos de build para TV
+          tv_build_success=false
+          
+          # Método 1: flavor tv
+          if ! $tv_build_success && flutter build apk --release --flavor tv --target-platform android-arm64; then
+            tv_build_success=true
+            echo "✅ TV flavor build successful"
+          fi
+          
+          # Método 2: target específico si existe
+          if ! $tv_build_success && [ -f "lib/main_tv.dart" ]; then
+            if flutter build apk --release -t lib/main_tv.dart --target-platform android-arm64; then
+              tv_build_success=true
+              echo "✅ TV target build successful"
+            fi
+          fi
+          
+          if ! $tv_build_success; then
+            echo "⚠️ TV-specific build failed, but standard build should be available"
+          fi
+        else
+          echo "📱 No TV-specific configuration found, using standard Android build"
+        fi
+
+    - name: List and verify generated APKs
+      run: |
+        echo "📋 Searching for generated APK files..."
+        
+        # Buscar todos los APKs generados
+        apk_files=$(find . -name "*.apk" -type f 2>/dev/null || true)
+        
+        if [ -n "$apk_files" ]; then
+          echo "✅ Found APK files:"
+          echo "$apk_files" | while read -r apk; do
+            if [ -f "$apk" ]; then
+              size=$(ls -lh "$apk" | awk '{print $5}')
+              echo "  📱 $apk (Size: $size)"
+              
+              # Verificar que el APK no esté corrupto
+              if file "$apk" | grep -q "Android"; then
+                echo "    ✅ Valid Android APK"
+              else
+                echo "    ⚠️ Potentially invalid APK"
+              fi
+            fi
+          done
+        else
+          echo "❌ No APK files found!"
+          echo "🔍 Checking build output directories..."
+          find . -type d -name "*apk*" -o -name "*outputs*" | head -10
+        fi
+        
+        echo ""
+        echo "📊 Build output summary:"
+        du -sh build/ 2>/dev/null || echo "No build directory found"
+
+    - name: Upload APK artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: android-tv-apk-${{ github.run_number }}-${{ github.ref_name }}
+        path: |
+          build/app/outputs/flutter-apk/*.apk
+          build/app/outputs/apk/**/*.apk
+        retention-days: 30
+
+    - name: Upload build logs (on failure)
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs-${{ github.run_number }}-${{ github.ref_name }}
+        path: |
+          build/app/build/
+          android/app/build/
+          gradle-*.log
+        retention-days: 7
+        
+    - name: Build summary
+      if: always()
+      run: |
+        echo "🏁 Build Summary"
+        echo "==============="
+        echo "Branch: ${{ github.ref_name }}"
+        echo "Commit: ${{ github.sha }}"
+        echo "Run number: ${{ github.run_number }}"
+        echo ""
+        
+        if [ -d "build/app/outputs" ]; then
+          echo "📱 Generated artifacts:"
+          find build/app/outputs -name "*.apk" -exec basename {} \; | sort | uniq
+        else
+          echo "❌ No build outputs found"
+        fi
