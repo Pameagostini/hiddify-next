@@ -180,26 +180,42 @@ jobs:
           echo "📝 Current dependencies with tv_focus:"
           grep -A 5 -B 5 "tv_focus" pubspec.yaml || true
           
-          # Verificar si tv_focus existe en pub.dev
-          echo "🔍 Checking if tv_focus exists on pub.dev..."
-          if curl -s "https://pub.dev/api/packages/tv_focus" | grep -q "Not Found\|404"; then
-            echo "❌ tv_focus package not found on pub.dev"
-            echo "🔧 Attempting to fix by removing tv_focus dependency..."
-            
-            # Hacer backup del pubspec.yaml original
-            cp pubspec.yaml pubspec.yaml.backup
-            
-            # Remover la línea de tv_focus
-            sed -i '/tv_focus/d' pubspec.yaml
-            
-            echo "✅ Removed tv_focus from pubspec.yaml"
-            echo "📄 Updated dependencies section:"
-            grep -A 10 "dependencies:" pubspec.yaml || true
-          else
-            echo "✅ tv_focus package exists on pub.dev"
+          # tv_focus no existe en pub.dev, necesitamos reemplazarlo
+          echo "❌ tv_focus package doesn't exist on pub.dev"
+          echo "🔧 Replacing tv_focus with dpad_container (recommended alternative)..."
+          
+          # Hacer backup del pubspec.yaml original
+          cp pubspec.yaml pubspec.yaml.backup
+          
+          # Reemplazar tv_focus con dpad_container
+          sed -i 's/tv_focus.*/dpad_container: ^1.0.0/' pubspec.yaml
+          
+          echo "✅ Replaced tv_focus with dpad_container"
+          echo "📄 Updated dependencies section:"
+          grep -A 10 "dependencies:" pubspec.yaml || true
+          
+          # También verificar imports en el código
+          echo "🔍 Checking for tv_focus imports in code..."
+          if find lib -name "*.dart" -exec grep -l "tv_focus" {} \; 2>/dev/null; then
+            echo "⚠️ Found tv_focus imports in code files"
+            echo "📝 Files that need manual import updates:"
+            find lib -name "*.dart" -exec grep -l "tv_focus" {} \; 2>/dev/null || true
+            echo "💡 Note: You'll need to update these imports from 'tv_focus' to 'dpad_container'"
           fi
+          
         else
           echo "✅ No tv_focus dependency found in pubspec.yaml"
+        fi
+        
+        echo ""
+        echo "🔍 Checking for other common TV focus packages..."
+        if grep -q "dpad_container\|simple_tv_navigation\|focus_on_it" pubspec.yaml; then
+          echo "✅ Found existing TV focus packages:"
+          grep "dpad_container\|simple_tv_navigation\|focus_on_it" pubspec.yaml || true
+        else
+          echo "💡 No TV focus packages found. Consider adding:"
+          echo "   - dpad_container: ^1.0.0"
+          echo "   - simple_tv_navigation: ^1.0.0"
         fi
       run: |
         echo "📦 Getting Flutter dependencies..."
