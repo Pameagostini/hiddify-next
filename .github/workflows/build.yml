@@ -3,11 +3,15 @@ name: Build
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
+      - fix/compile-errors
     tags:
       - "v*"
   pull_request:
     branches:
       - main
+      - fix/compile-errors
 
 jobs:
   build-android:
@@ -15,6 +19,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -23,18 +29,18 @@ jobs:
           java-version: '17'
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2.16.0
-        with:
-          flutter-version: '3.19.6'
-          channel: 'stable'
-          cache: true
+        run: |
+          git clone https://github.com/flutter/flutter.git -b stable --depth 1
+          echo "$GITHUB_WORKSPACE/flutter/bin" >> $GITHUB_PATH
+          export PATH="$GITHUB_WORKSPACE/flutter/bin:$PATH"
+          flutter --version
+          flutter doctor
+          flutter config --no-analytics
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
-          cache-dependency-path: |
-            libcore/go.sum
 
       - name: Setup NDK
         uses: nttld/setup-ndk@v1.4.2
@@ -52,29 +58,50 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
+      - name: Install gomobile
+        run: |
+          export PATH="$GITHUB_WORKSPACE/flutter/bin:$PATH"
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          gomobile init
+
       - name: Make android prepare
-        run: make android-prepare
+        run: |
+          export PATH="$GITHUB_WORKSPACE/flutter/bin:$PATH"
+          export ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}
+          make android-prepare
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
 
       - name: Get Flutter dependencies
-        run: flutter pub get
+        run: |
+          export PATH="$GITHUB_WORKSPACE/flutter/bin:$PATH"
+          flutter pub get
 
       - name: Generate code
-        run: dart run build_runner build --delete-conflicting-outputs
+        run: |
+          export PATH="$GITHUB_WORKSPACE/flutter/bin:$PATH"
+          dart run build_runner build --delete-conflicting-outputs
 
       - name: Build APK (Debug)
-        run: flutter build apk --debug
+        run: |
+          export PATH="$GITHUB_WORKSPACE/flutter/bin:$PATH"
+          flutter build apk --debug
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
 
       - name: Build APK (Release)
         if: startsWith(github.ref, 'refs/tags/')
-        run: flutter build apk --release
+        run: |
+          export PATH="$GITHUB_WORKSPACE/flutter/bin:$PATH"
+          flutter build apk --release
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
 
       - name: Build AAB (Release)
         if: startsWith(github.ref, 'refs/tags/')
-        run: flutter build appbundle --release
+        run: |
+          export PATH="$GITHUB_WORKSPACE/flutter/bin:$PATH"
+          flutter build appbundle --release
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
 
