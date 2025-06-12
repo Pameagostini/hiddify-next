@@ -127,10 +127,25 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
       with:
-        api-level: ${{ env.ANDROID_API_LEVEL }}
-        build-tools: ${{ env.ANDROID_BUILD_TOOLS }}
+        cmdline-tools-version: '11076708'
+        accept-android-sdk-licenses: true
 
-    - name: Accept Android SDK licenses
+    - name: Install Android SDK components
+      run: |
+        echo "📱 Installing Android SDK components..."
+        
+        # Actualizar SDK manager
+        $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --update
+        
+        # Instalar componentes necesarios
+        $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+          "platforms;android-${{ env.ANDROID_API_LEVEL }}" \
+          "build-tools;${{ env.ANDROID_BUILD_TOOLS }}" \
+          "platform-tools" \
+          "extras;android;m2repository" \
+          "extras;google;m2repository"
+        
+        echo "✅ Android SDK components installed"
       run: |
         echo "📄 Accepting Android SDK licenses..."
         yes | flutter doctor --android-licenses || true
@@ -156,7 +171,36 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-gradle-
 
-    - name: Get Flutter dependencies
+    - name: Fix missing tv_focus dependency
+      run: |
+        echo "🔧 Checking for tv_focus dependency issue..."
+        
+        if grep -q "tv_focus" pubspec.yaml; then
+          echo "⚠️ Found tv_focus dependency in pubspec.yaml"
+          echo "📝 Current dependencies with tv_focus:"
+          grep -A 5 -B 5 "tv_focus" pubspec.yaml || true
+          
+          # Verificar si tv_focus existe en pub.dev
+          echo "🔍 Checking if tv_focus exists on pub.dev..."
+          if curl -s "https://pub.dev/api/packages/tv_focus" | grep -q "Not Found\|404"; then
+            echo "❌ tv_focus package not found on pub.dev"
+            echo "🔧 Attempting to fix by removing tv_focus dependency..."
+            
+            # Hacer backup del pubspec.yaml original
+            cp pubspec.yaml pubspec.yaml.backup
+            
+            # Remover la línea de tv_focus
+            sed -i '/tv_focus/d' pubspec.yaml
+            
+            echo "✅ Removed tv_focus from pubspec.yaml"
+            echo "📄 Updated dependencies section:"
+            grep -A 10 "dependencies:" pubspec.yaml || true
+          else
+            echo "✅ tv_focus package exists on pub.dev"
+          fi
+        else
+          echo "✅ No tv_focus dependency found in pubspec.yaml"
+        fi
       run: |
         echo "📦 Getting Flutter dependencies..."
         flutter pub get
@@ -361,10 +405,13 @@ jobs:
       with:
         name: build-logs-${{ github.run_number }}-${{ github.ref_name }}
         path: |
-          build/app/build/
+          build/
           android/app/build/
-          gradle-*.log
+          android/build/
+          ~/.gradle/daemon/
+          *.log
         retention-days: 7
+        if-no-files-found: ignore
         
     - name: Build summary
       if: always()
